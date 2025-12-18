@@ -1,22 +1,24 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 export type UserRole = "admin" | "member";
 
 export interface User {
   id: string;
-  username: string;
+  username: string; // Using email as username for display
   role: UserRole;
   name: string;
+  email?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   users: User[];
-  login: (username: string, password: string) => boolean;
-  logout: () => void;
-  register: (username: string, password: string, name: string, role: UserRole) => boolean;
-  deleteUser: (id: string) => void;
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  register: (email: string, password: string, name: string, role: UserRole) => Promise<boolean>;
+  deleteUser: (id: string) => Promise<void>;
   isLoading: boolean;
 }
 
@@ -27,106 +29,139 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize users and check session
+  // Initialize session and listeners
   useEffect(() => {
-    const storedUsers = localStorage.getItem("qsac_users");
-    const storedSession = localStorage.getItem("qsac_session");
+    const initializeAuth = async () => {
+      setIsLoading(true);
+      
+      // Get current session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        await fetchUserProfile(session.user.id);
+      } else {
+        setUser(null);
+      }
 
-    if (storedUsers) {
-      setUsers(JSON.parse(storedUsers));
-    } else {
-      // Default admin account
-      const defaultAdmin = {
-        id: "1",
-        username: "admin",
-        password: "admin123", // In a real app, this should be hashed
-        role: "admin" as UserRole,
-        name: "Administrator"
-      };
-      localStorage.setItem("qsac_users", JSON.stringify([defaultAdmin]));
-      setUsers([defaultAdmin]); // Store without password in state ideally, but for mock auth we might need to keep it or fetch differently.
-      // Actually, for security even in mock, we shouldn't expose password in the public state "users" if we can avoid it, 
-      // but we need it for login verification. 
-      // Let's store full objects in localStorage, but maybe filter out passwords for the context state if possible.
-      // For simplicity in this mock, we will keep it simple.
-    }
+      // Listen for auth changes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (session?.user) {
+          await fetchUserProfile(session.user.id);
+        } else {
+          setUser(null);
+        }
+        setIsLoading(false);
+      });
 
-    if (storedSession) {
-      setUser(JSON.parse(storedSession));
-    }
-    
-    setIsLoading(false);
+      // Fetch all public profiles
+      fetchProfiles();
+
+      setIsLoading(false);
+      return () => subscription.unsubscribe();
+    };
+
+    initializeAuth();
   }, []);
 
-  const login = (username: string, password: string) => {
-    const storedUsersStr = localStorage.getItem("qsac_users");
-    if (!storedUsersStr) return false;
-
-    const storedUsers = JSON.parse(storedUsersStr);
-    const foundUser = storedUsers.find((u: any) => u.username === username && u.password === password);
-
-    if (foundUser) {
-      const { password, ...userWithoutPassword } = foundUser;
-      setUser(userWithoutPassword);
-      localStorage.setItem("qsac_session", JSON.stringify(userWithoutPassword));
-      toast.success("Đăng nhập thành công!");
-      return true;
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (data) {
+        setUser({
+          id: data.id,
+          username: data.username || data.email || "", 
+          role: (data.role as UserRole) || 'member',
+          name: data.full_name || "User",
+          email: data.email
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching profile:", error);
     }
-
-    toast.error("Tên đăng nhập hoặc mật khẩu không đúng");
-    return false;
   };
 
-  const logout = () => {
+  const fetchProfiles = async () => {
+    try {
+        const { data, error } = await supabase.from('profiles').select('*');
+        if (data) {
+            setUsers(data.map(p => ({
+                id: p.id,
+                username: p.username || p.email || "",
+                role: (p.role as UserRole) || 'member',
+                name: p.full_name || "",
+                email: p.email
+            })));
+        }
+    } catch (e) {
+        console.error("Error fetching profiles", e);
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        toast.error(error.message || "Đăng nhập thất bại");
+        return false;
+      }
+
+      if (data.user) {
+         await fetchUserProfile(data.user.id);
+         toast.success("Đăng nhập thành công!");
+         return true;
+      }
+      return false;
+    } catch (error) {
+      toast.error("Đã xảy ra lỗi khi đăng nhập");
+      return false;
+    }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem("qsac_session");
     toast.info("Đã đăng xuất");
   };
 
-  const register = (username: string, password: string, name: string, role: UserRole) => {
-    const storedUsersStr = localStorage.getItem("qsac_users");
-    const storedUsers = storedUsersStr ? JSON.parse(storedUsersStr) : [];
+  const register = async (email: string, password: string, name: string, role: UserRole) => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name: name, // Maps to full_name in our trigger logic
+            role: role,
+          },
+        },
+      });
 
-    if (storedUsers.find((u: any) => u.username === username)) {
-      toast.error("Tên đăng nhập đã tồn tại");
+      if (error) {
+        toast.error(error.message);
+        return false;
+      }
+
+      toast.success("Tạo tài khoản thành công! (Vui lòng kiểm tra email nếu yêu cầu xác thực)");
+      fetchProfiles();
+      return true;
+    } catch (error) {
+      toast.error("Lỗi tạo tài khoản");
       return false;
     }
-
-    const newUser = {
-      id: Date.now().toString(),
-      username,
-      password,
-      name,
-      role
-    };
-
-    const newUsers = [...storedUsers, newUser];
-    localStorage.setItem("qsac_users", JSON.stringify(newUsers));
-    
-    // Update local users state (remove password for safety if we were hiding it, but here we just update list)
-    // We should reload users from local storage or just append
-    const { password: _, ...userForState } = newUser;
-    // We actually need to update the full list that includes passwords for the `users` state if we want `users` to be the source of truth for management
-    // But usually `users` state in context is for display.
-    // Let's just update the list.
-    
-    // Re-fetch to ensure sync
-    setUsers(newUsers); 
-    
-    toast.success("Tạo tài khoản thành công");
-    return true;
   };
 
-  const deleteUser = (id: string) => {
-    const storedUsersStr = localStorage.getItem("qsac_users");
-    if (!storedUsersStr) return;
-
-    let storedUsers = JSON.parse(storedUsersStr);
-    storedUsers = storedUsers.filter((u: any) => u.id !== id);
-    
-    localStorage.setItem("qsac_users", JSON.stringify(storedUsers));
-    setUsers(storedUsers);
-    toast.success("Đã xóa tài khoản");
+  const deleteUser = async (id: string) => {
+     // Note: Deleting users requires Service Role in Supabase
+     toast.error("Chức năng xóa tài khoản yêu cầu quyền quản trị cấp cao (Supabase Dashboard).");
   };
 
   return (

@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import Header from "@/components/Header";
 import BreakingNews from "@/components/BreakingNews";
 import HeroSection from "@/components/HeroSection";
@@ -12,8 +14,32 @@ import floodImage from "@/assets/news-flood-disaster.jpg";
 import legalImage from "@/assets/news-legal-standards.jpg";
 import qrImage from "@/assets/news-qr-traceability.jpg";
 import gamblingImage from "@/assets/news-gambling-raid.jpg";
+
 const Index = () => {
-  const alertArticles = [{
+  const [articles, setArticles] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchArticles = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('articles')
+          .select('*')
+          .eq('status', 'published')
+          .order('created_at', { ascending: false });
+        
+        if (data) {
+          setArticles(data);
+        }
+      } catch (error) {
+        console.error("Error fetching articles:", error);
+      }
+    };
+
+    fetchArticles();
+  }, []);
+
+  // Default hardcoded articles for fallback
+  const defaultAlertArticles = [{
     title: "Thu hồi 3 sản phẩm mỹ phẩm Vinamake bị cơ quan công an kết luận là hàng giả",
     excerpt: "Cục Quản lý dược, Bộ Y tế vừa có quyết định thu hồi 3 sản phẩm mỹ phẩm bao gồm dầu gội đầu, dung dịch vệ sinh phụ nữ.",
     time: "18 phút trước",
@@ -40,7 +66,8 @@ const Index = () => {
     category: "Xã hội",
     image: floodImage
   }];
-  const standardsArticles = [{
+
+  const defaultStandardsArticles = [{
     title: "Công văn 790/ATTP-SP năm 2025 tăng cường kiểm tra thực phẩm giả, kém chất lượng",
     excerpt: "Cục an toàn thực phẩm ban hành công văn yêu cầu tăng cường kiểm tra, hậu kiểm các sản phẩm thực phẩm vi phạm.",
     time: "1 giờ trước",
@@ -65,7 +92,8 @@ const Index = () => {
     category: "Tiêu chuẩn",
     image: legalImage
   }];
-  const technologyArticles = [{
+
+  const defaultTechnologyArticles = [{
     title: "Blockchain và QR Code: Giải pháp chống hàng giả hiệu quả cho doanh nghiệp",
     time: "17 phút trước",
     image: qrImage
@@ -78,6 +106,26 @@ const Index = () => {
     time: "5 giờ trước",
     image: qrImage
   }];
+
+  // Process articles from Supabase or use default
+  const getArticlesByCategory = (categories: string[], defaultData: any[]) => {
+    const filtered = articles.filter(a => categories.includes(a.category));
+    if (filtered.length === 0) return defaultData;
+    
+    return filtered.map(a => ({
+      title: a.title,
+      excerpt: a.excerpt || "",
+      time: new Date(a.created_at).toLocaleDateString('vi-VN'),
+      category: a.category,
+      riskLevel: "Cao", // You might want to add this field to DB
+      image: a.image_url || cosmeticsImage // Fallback image
+    }));
+  };
+
+  const alertArticles = getArticlesByCategory(['Tin & Cảnh báo', 'Alo 389'], defaultAlertArticles);
+  const standardsArticles = getArticlesByCategory(['Giải mã hồ sơ', 'An ninh số'], defaultStandardsArticles);
+  const technologyArticles = getArticlesByCategory(['TMĐT-AI', 'Doanh nghiệp số'], defaultTechnologyArticles);
+
   return <div className="min-h-screen bg-background">
       <Header />
       <BreakingNews />

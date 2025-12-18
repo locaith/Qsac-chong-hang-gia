@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useWebsiteSettings, type CategoryPage, type HomepageSection } from "@/contexts/WebsiteSettingsContext";
 import { useAuth, type UserRole } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import { 
   LayoutDashboard, 
   FileText, 
@@ -127,18 +128,64 @@ const Admin = () => {
     role: "member"
   });
 
+  // Articles state
+  const [articles, setArticles] = useState<Article[]>([]);
+
+  // Fetch articles from Supabase
+  const fetchArticles = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('articles')
+        .select(`
+          *,
+          profiles (full_name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("Error fetching articles:", error);
+        toast.error("Lỗi khi tải danh sách bài viết");
+        return;
+      }
+
+      if (data) {
+        const formattedArticles: Article[] = data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          category: item.category || "Uncategorized",
+          author: item.profiles?.full_name || "Unknown",
+          date: new Date(item.created_at).toLocaleDateString('vi-VN'),
+          status: item.status === 'published' ? 'Đã xuất bản' : 'Nháp',
+          excerpt: item.excerpt,
+          content: item.content,
+          featuredImage: item.image_url,
+          tags: item.tags || [],
+          publishDate: item.created_at.split('T')[0]
+        }));
+        setArticles(formattedArticles);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchArticles();
+  }, []);
+
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
 
-  const handleRegisterUser = () => {
+  const handleRegisterUser = async () => {
     if (!userForm.username || !userForm.password || !userForm.name) {
       toast.error("Vui lòng điền đầy đủ thông tin");
       return;
     }
     
-    const success = register(userForm.username, userForm.password, userForm.name, userForm.role);
+    // Note: This might affect current session if not handled carefully in AuthContext
+    const success = await register(userForm.username, userForm.password, userForm.name, userForm.role);
     if (success) {
       setShowUserForm(false);
       setUserForm({
@@ -150,39 +197,26 @@ const Admin = () => {
     }
   };
 
-  // Sample data
-  const [articles, setArticles] = useState<Article[]>([
-    { 
-      id: "1", 
-      title: "Cao điểm chống buôn lậu cuối năm 2025", 
-      category: "Alo 389", 
-      author: "Biên tập viên", 
-      date: "2025-01-10", 
-      status: "Đã xuất bản",
-      excerpt: "Ban Chỉ đạo 389 đề nghị lực lượng chức năng tập trung kiểm tra...",
-      tags: ["389", "buôn lậu", "kiểm tra"]
-    },
-    { 
-      id: "2", 
-      title: "Cảnh báo mỹ phẩm giả tràn lan trên TMĐT", 
-      category: "Tin & Cảnh báo", 
-      author: "Admin", 
-      date: "2025-01-09", 
-      status: "Nháp",
-      excerpt: "Phát hiện nhiều sản phẩm mỹ phẩm giả mạo thương hiệu...",
-      tags: ["mỹ phẩm", "TMĐT", "cảnh báo"]
-    },
-    { 
-      id: "3", 
-      title: "Hướng dẫn tra cứu TraceID cho doanh nghiệp", 
-      category: "TMĐT-AI", 
-      author: "Editor", 
-      date: "2025-01-08", 
-      status: "Đã xuất bản",
-      excerpt: "Quy trình chi tiết tra cứu và sử dụng hệ thống TraceID...",
-      tags: ["TraceID", "hướng dẫn", "doanh nghiệp"]
-    },
-  ]);
+  const handleUpdateUserRole = async (userId: string, newRole: UserRole) => {
+    try {
+        const { error } = await supabase
+            .from('profiles')
+            .update({ role: newRole })
+            .eq('id', userId);
+        
+        if (error) {
+            toast.error("Lỗi cập nhật quyền hạn");
+        } else {
+            toast.success("Đã cập nhật quyền hạn");
+            // Trigger refresh in AuthContext would be ideal, but for now we rely on realtime or reload
+            // Or we can manually update the local state if we had one, but users comes from context
+             window.location.reload(); // Simple brute force to refresh context
+        }
+    } catch (e) {
+        console.error(e);
+        toast.error("Lỗi hệ thống");
+    }
+  };
 
   const [events, setEvents] = useState<Event[]>([
     { id: "1", title: "Hội thảo An toàn thực phẩm 2025", date: "2025-02-15", location: "Hà Nội", type: "Hội thảo", status: "Sắp diễn ra" },
@@ -320,7 +354,7 @@ const Admin = () => {
     }
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
@@ -328,14 +362,38 @@ const Admin = () => {
         return;
       }
       
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setPreviewImage(result);
-        setArticleForm({ ...articleForm, featuredImage: result });
-      };
-      reader.readAsDataURL(file);
-      toast.success("Đã tải ảnh lên");
+      // Upload to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      try {
+        const { error: uploadError } = await supabase.storage
+            .from('article-images')
+            .upload(filePath, file);
+
+        if (uploadError) {
+            console.error("Storage upload error:", uploadError);
+            // Fallback to Base64 if storage fails (e.g. bucket not created)
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const result = reader.result as string;
+                setPreviewImage(result);
+                setArticleForm({ ...articleForm, featuredImage: result });
+            };
+            reader.readAsDataURL(file);
+            toast.warning("Không thể tải lên Storage, sử dụng Base64 thay thế (Kiểm tra lại cấu hình Supabase)");
+            return;
+        }
+
+        const { data } = supabase.storage.from('article-images').getPublicUrl(filePath);
+        setPreviewImage(data.publicUrl);
+        setArticleForm({ ...articleForm, featuredImage: data.publicUrl });
+        toast.success("Đã tải ảnh lên");
+      } catch (error) {
+          console.error(error);
+          toast.error("Lỗi khi tải ảnh");
+      }
     }
   };
 
@@ -347,46 +405,99 @@ const Admin = () => {
     }
   };
 
-  const handleSaveArticle = () => {
+  const handleSaveArticle = async () => {
     if (!articleForm.title || !articleForm.category || !articleForm.author) {
       toast.error("Vui lòng điền đầy đủ thông tin bắt buộc");
       return;
     }
 
-    const newArticle: Article = {
-      id: Date.now().toString(),
+    const articleData = {
       title: articleForm.title,
       category: articleForm.category,
-      author: articleForm.author,
-      date: articleForm.publishDate,
-      status: articleForm.status === "published" ? "Đã xuất bản" : "Nháp",
       excerpt: articleForm.excerpt,
       content: articleForm.content,
-      featuredImage: articleForm.featuredImage,
+      image_url: articleForm.featuredImage,
       tags: articleForm.tags.split(",").map(tag => tag.trim()).filter(tag => tag),
-      publishDate: articleForm.publishDate
+      status: articleForm.status === "Đã xuất bản" || articleForm.status === "published" ? "published" : "draft",
+      author_id: user?.id,
+      slug: articleForm.title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '')
     };
 
-    setArticles([newArticle, ...articles]);
-    setShowArticleForm(false);
-    setPreviewImage("");
-    setArticleForm({
-      title: "",
-      category: "",
-      author: "",
-      excerpt: "",
-      content: "",
-      featuredImage: "",
-      tags: "",
-      status: "draft",
-      publishDate: new Date().toISOString().split('T')[0]
-    });
-    toast.success("Đã lưu bài viết");
+    try {
+        if (editingArticle) {
+            const { error } = await supabase
+              .from('articles')
+              .update(articleData)
+              .eq('id', editingArticle.id);
+            
+            if (error) throw error;
+            toast.success("Đã cập nhật bài viết");
+        } else {
+            const { error } = await supabase
+              .from('articles')
+              .insert([articleData]);
+            
+            if (error) throw error;
+            toast.success("Đã tạo bài viết mới");
+        }
+
+        fetchArticles();
+        setShowArticleForm(false);
+        setEditingArticle(null);
+        setPreviewImage("");
+        setArticleForm({
+          title: "",
+          category: "",
+          author: user?.name || "",
+          excerpt: "",
+          content: "",
+          featuredImage: "",
+          tags: "",
+          status: "draft",
+          publishDate: new Date().toISOString().split('T')[0],
+          seoTitle: "",
+          seoDescription: "",
+          seoKeywords: ""
+        });
+    } catch (error: any) {
+        console.error("Save error:", error);
+        toast.error(`Lỗi: ${error.message}`);
+    }
   };
 
-  const handleDeleteArticle = (id: string) => {
-    setArticles(articles.filter(a => a.id !== id));
-    toast.success("Đã xóa bài viết");
+  const handleDeleteArticle = async (id: string) => {
+    if (!confirm("Bạn có chắc chắn muốn xóa bài viết này?")) return;
+    
+    try {
+        const { error } = await supabase.from('articles').delete().eq('id', id);
+        if (error) throw error;
+        
+        toast.success("Đã xóa bài viết");
+        fetchArticles();
+    } catch (error: any) {
+        console.error("Delete error:", error);
+        toast.error("Lỗi khi xóa bài viết");
+    }
+  };
+
+  const handleEditArticle = (article: Article) => {
+      setEditingArticle(article);
+      setArticleForm({
+          title: article.title,
+          category: article.category,
+          author: article.author,
+          excerpt: article.excerpt || "",
+          content: article.content || "",
+          featuredImage: article.featuredImage || "",
+          tags: article.tags?.join(", ") || "",
+          status: article.status === "Đã xuất bản" ? "published" : "draft",
+          publishDate: article.publishDate || new Date().toISOString().split('T')[0],
+          seoTitle: "",
+          seoDescription: "",
+          seoKeywords: ""
+      });
+      setPreviewImage(article.featuredImage || "");
+      setShowArticleForm(true);
   };
 
   const handleDeleteEvent = (id: string) => {
@@ -550,7 +661,25 @@ const Admin = () => {
                   <h2 className="text-3xl font-bold text-foreground mb-2">Quản lý bài viết</h2>
                   <p className="text-muted-foreground">Thêm, sửa, xóa và quản lý nội dung bài viết</p>
                 </div>
-                <Button onClick={() => setShowArticleForm(true)}>
+                <Button onClick={() => {
+                    setEditingArticle(null);
+                    setArticleForm({
+                        title: "",
+                        category: "",
+                        author: user?.name || "",
+                        excerpt: "",
+                        content: "",
+                        featuredImage: "",
+                        tags: "",
+                        status: "draft",
+                        publishDate: new Date().toISOString().split('T')[0],
+                        seoTitle: "",
+                        seoDescription: "",
+                        seoKeywords: ""
+                    });
+                    setPreviewImage("");
+                    setShowArticleForm(true);
+                }}>
                   <Plus className="h-4 w-4 mr-2" />
                   Thêm bài viết
                 </Button>
@@ -561,7 +690,7 @@ const Admin = () => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <FileText className="h-5 w-5" />
-                      Thêm bài viết mới
+                      {editingArticle ? "Chỉnh sửa bài viết" : "Thêm bài viết mới"}
                     </CardTitle>
                     <CardDescription>Điền đầy đủ thông tin để tạo bài viết chuyên nghiệp</CardDescription>
                   </CardHeader>
@@ -705,47 +834,6 @@ const Admin = () => {
                         />
                       </div>
 
-                      {/* SEO Settings */}
-                      <div className="border rounded-lg p-4 bg-secondary/10">
-                        <Label className="text-base font-semibold mb-4 block flex items-center gap-2">
-                          <Search className="h-4 w-4" />
-                          Tối ưu hóa công cụ tìm kiếm (SEO)
-                        </Label>
-                        <div className="space-y-4">
-                          <div>
-                            <Label className="text-sm font-medium">Tiêu đề SEO (Meta Title)</Label>
-                            <Input 
-                              placeholder="Tiêu đề hiển thị trên Google..." 
-                              value={articleForm.seoTitle}
-                              onChange={(e) => setArticleForm({ ...articleForm, seoTitle: e.target.value })}
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {articleForm.seoTitle?.length || 0}/60 ký tự
-                            </p>
-                          </div>
-                          <div>
-                            <Label className="text-sm font-medium">Mô tả SEO (Meta Description)</Label>
-                            <Textarea 
-                              placeholder="Mô tả ngắn hiển thị trên kết quả tìm kiếm..." 
-                              rows={2}
-                              value={articleForm.seoDescription}
-                              onChange={(e) => setArticleForm({ ...articleForm, seoDescription: e.target.value })}
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {articleForm.seoDescription?.length || 0}/160 ký tự
-                            </p>
-                          </div>
-                          <div>
-                            <Label className="text-sm font-medium">Từ khóa (Keywords)</Label>
-                            <Input 
-                              placeholder="từ khóa 1, từ khóa 2, từ khóa 3..." 
-                              value={articleForm.seoKeywords}
-                              onChange={(e) => setArticleForm({ ...articleForm, seoKeywords: e.target.value })}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
                       {/* Tags */}
                       <div>
                         <Label className="text-base font-semibold">Tags</Label>
@@ -797,6 +885,7 @@ const Admin = () => {
                           variant="outline" 
                           onClick={() => {
                             setShowArticleForm(false);
+                            setEditingArticle(null);
                             setPreviewImage("");
                             setArticleForm({
                               title: "",
@@ -896,7 +985,12 @@ const Admin = () => {
                             <Button variant="ghost" size="sm" title="Xem trước">
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="sm" title="Chỉnh sửa">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              title="Chỉnh sửa"
+                              onClick={() => handleEditArticle(article)}
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button 
@@ -1718,10 +1812,10 @@ const Admin = () => {
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label htmlFor="username">Tên đăng nhập <span className="text-red-500">*</span></Label>
+                          <Label htmlFor="username">Tên đăng nhập / Email <span className="text-red-500">*</span></Label>
                           <Input 
                             id="username" 
-                            placeholder="username" 
+                            placeholder="email@example.com" 
                             value={userForm.username}
                             onChange={(e) => setUserForm({...userForm, username: e.target.value})}
                           />
@@ -1739,9 +1833,9 @@ const Admin = () => {
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label htmlFor="fullname">Họ và tên <span className="text-red-500">*</span></Label>
+                          <Label htmlFor="name">Họ và tên <span className="text-red-500">*</span></Label>
                           <Input 
-                            id="fullname" 
+                            id="name" 
                             placeholder="Nguyễn Văn A" 
                             value={userForm.name}
                             onChange={(e) => setUserForm({...userForm, name: e.target.value})}
@@ -1754,7 +1848,7 @@ const Admin = () => {
                             onValueChange={(value) => setUserForm({...userForm, role: value as UserRole})}
                           >
                             <SelectTrigger id="role">
-                              <SelectValue placeholder="Chọn quyền" />
+                              <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="member">Thành viên</SelectItem>
@@ -1763,13 +1857,25 @@ const Admin = () => {
                           </Select>
                         </div>
                       </div>
-                      <div className="flex justify-end gap-2 pt-4">
-                        <Button variant="outline" onClick={() => setShowUserForm(false)}>
-                          Hủy
-                        </Button>
+                      <div className="flex gap-2 pt-4 border-t">
                         <Button onClick={handleRegisterUser}>
                           <Save className="h-4 w-4 mr-2" />
-                          Lưu thành viên
+                          Tạo tài khoản
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => {
+                            setShowUserForm(false);
+                            setUserForm({
+                              username: "",
+                              password: "",
+                              name: "",
+                              role: "member"
+                            });
+                          }}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Hủy
                         </Button>
                       </div>
                     </div>
@@ -1783,38 +1889,51 @@ const Admin = () => {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Họ và tên</TableHead>
-                        <TableHead>Tên đăng nhập</TableHead>
-                        <TableHead>Quyền hạn</TableHead>
+                        <TableHead>Tên đăng nhập / Email</TableHead>
+                        <TableHead>Vai trò</TableHead>
                         <TableHead className="text-right">Thao tác</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {users.map((u) => (
-                        <TableRow key={u.id}>
-                          <TableCell className="font-medium">{u.name}</TableCell>
-                          <TableCell>{u.username}</TableCell>
+                      {users.map((user) => (
+                        <TableRow key={user.id}>
+                          <TableCell className="font-medium">{user.name}</TableCell>
+                          <TableCell>{user.username}</TableCell>
                           <TableCell>
-                            <Badge variant={u.role === "admin" ? "destructive" : "secondary"}>
-                              {u.role === "admin" ? "Quản trị viên" : "Thành viên"}
+                            <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                              {user.role === "admin" ? "Quản trị viên" : "Thành viên"}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => {
-                                if (u.username === "admin" || u.id === user?.id) {
-                                  toast.error("Không thể xóa tài khoản này");
-                                  return;
-                                }
-                                if (confirm(`Bạn có chắc muốn xóa thành viên ${u.name}?`)) {
-                                  deleteUser(u.id);
-                                }
-                              }}
-                              disabled={u.username === "admin" || u.id === user?.id}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-600" />
-                            </Button>
+                             <div className="flex justify-end gap-2">
+                                {user.role !== 'admin' ? (
+                                    <Button 
+                                        variant="ghost" 
+                                        size="sm"
+                                        onClick={() => handleUpdateUserRole(user.id, 'admin')}
+                                        title="Thăng cấp lên Admin"
+                                    >
+                                        <Users className="h-4 w-4 text-blue-600" />
+                                    </Button>
+                                ) : (
+                                     <Button 
+                                        variant="ghost" 
+                                        size="sm"
+                                        onClick={() => handleUpdateUserRole(user.id, 'member')}
+                                        title="Hạ cấp xuống Member"
+                                    >
+                                        <Users className="h-4 w-4 text-gray-600" />
+                                    </Button>
+                                )}
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => deleteUser(user.id)}
+                                  title="Xóa thành viên"
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}

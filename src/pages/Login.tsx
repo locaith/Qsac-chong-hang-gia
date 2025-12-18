@@ -21,9 +21,9 @@ const Login = () => {
     return null;
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const success = login(username, password);
+    const success = await login(username, password);
     if (success) {
       const from = (location.state as any)?.from?.pathname || "/admin";
       navigate(from, { replace: true });
@@ -36,18 +36,18 @@ const Login = () => {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center text-primary">Đăng nhập hệ thống</CardTitle>
           <CardDescription className="text-center">
-            Nhập thông tin tài khoản để truy cập trang quản trị
+            Nhập Email và Mật khẩu để truy cập trang quản trị
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Tên đăng nhập</Label>
+              <Label htmlFor="username">Email</Label>
               <div className="relative">
                 <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input 
                   id="username" 
-                  placeholder="admin" 
+                  placeholder="admin@example.com" 
                   className="pl-9"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
