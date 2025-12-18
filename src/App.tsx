@@ -47,6 +47,8 @@ const App = () => (
               <Route path="/du-lieu" element={<Data />} />
               <Route path="/video" element={<Video />} />
               <Route path="/bao-mat-du-lieu" element={<DataSecurity />} />
+              
+              {/* Admin Authentication Routes */}
               <Route path="/login" element={<Login />} />
               <Route 
                 path="/admin" 
@@ -56,6 +58,7 @@ const App = () => (
                   </ProtectedRoute>
                 } 
               />
+
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
