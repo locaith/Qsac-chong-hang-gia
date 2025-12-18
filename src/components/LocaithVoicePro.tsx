@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Mic, MicOff, Send, Keyboard } from "lucide-react";
+import { Mic, MicOff, Send, Keyboard, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,11 +17,30 @@ const LocaithVoicePro = () => {
   const [transcript, setTranscript] = useState("");
   const [searchText, setSearchText] = useState("");
   const [open, setOpen] = useState(false);
+  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [checkingPermission, setCheckingPermission] = useState(false);
+
+  // Check microphone permission
+  const checkMicrophonePermission = async () => {
+    setCheckingPermission(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+      setPermissionGranted(true);
+      setCheckingPermission(false);
+      return true;
+    } catch (err) {
+      console.error("Microphone permission error:", err);
+      setPermissionGranted(false);
+      setCheckingPermission(false);
+      return false;
+    }
+  };
 
   // Giả lập hiệu ứng lắng nghe
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isListening && open) {
+    if (isListening && open && permissionGranted) {
       const phrases = [
         "Đang nghe...",
         "Đang xử lý...",
@@ -44,10 +63,22 @@ const LocaithVoicePro = () => {
       setTranscript("");
     }
     return () => clearInterval(interval);
-  }, [isListening, open]);
+  }, [isListening, open, permissionGranted]);
 
-  const toggleListening = () => {
-    setIsListening(!isListening);
+  const toggleListening = async () => {
+    if (!isListening) {
+      // Trying to start listening
+      if (permissionGranted === true) {
+        setIsListening(true);
+      } else {
+        const granted = await checkMicrophonePermission();
+        if (granted) {
+          setIsListening(true);
+        }
+      }
+    } else {
+      setIsListening(false);
+    }
   };
 
   const handleSearch = () => {

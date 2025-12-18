@@ -136,20 +136,41 @@ const CameraAI = () => {
              </DialogClose>
           </div>
 
-          {/* Camera Preview Placeholder */}
+          {/* Camera Preview Placeholder or Permission Request */}
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
-             <div className="text-zinc-700 flex flex-col items-center gap-2">
-                <Camera className="h-12 w-12 opacity-20" />
-                <p className="text-sm font-mono opacity-40">CAMERA PREVIEW ACTIVE</p>
-             </div>
+             {permissionGranted === true ? (
+               <div className="text-zinc-700 flex flex-col items-center gap-2">
+                  <Camera className="h-12 w-12 opacity-20" />
+                  <p className="text-sm font-mono opacity-40">CAMERA PREVIEW ACTIVE</p>
+               </div>
+             ) : permissionGranted === false ? (
+               <div className="flex flex-col items-center gap-4 p-6 text-center max-w-xs">
+                  <div className="h-16 w-16 rounded-full bg-red-500/10 flex items-center justify-center mb-2">
+                    <AlertTriangle className="h-8 w-8 text-red-500" />
+                  </div>
+                  <h4 className="text-lg font-bold text-white">Cần quyền truy cập Camera</h4>
+                  <p className="text-sm text-zinc-400">
+                    Ứng dụng cần quyền truy cập camera để quét và phân tích sản phẩm. Vui lòng cấp quyền trong cài đặt trình duyệt.
+                  </p>
+                  <Button onClick={checkCameraPermission} variant="secondary" className="mt-2">
+                    Thử lại
+                  </Button>
+               </div>
+             ) : (
+               <div className="flex flex-col items-center gap-4">
+                  <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                  <p className="text-sm text-zinc-400">Đang yêu cầu quyền truy cập...</p>
+               </div>
+             )}
+             
              {/* Simulated Captured Image for Result */}
-             {stage === 'result' && result && (
+             {stage === 'result' && result && permissionGranted && (
                <img src={result.image} alt="Captured" className="absolute inset-0 w-full h-full object-cover opacity-40 blur-sm" />
              )}
           </div>
 
-          {/* Scanning Overlay (Visible only in idle/listening) */}
-          {(stage === 'idle' || stage === 'listening') && (
+          {/* Scanning Overlay (Visible only in idle/listening AND when permission granted) */}
+          {(stage === 'idle' || stage === 'listening') && permissionGranted && (
             <>
               {/* Dark Overlay with Transparent Center */}
               <div className="absolute inset-0 z-10 pointer-events-none">
