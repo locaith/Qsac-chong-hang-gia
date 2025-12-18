@@ -103,7 +103,11 @@ const LocaithVoicePro = () => {
         setIsListening(false);
         setSearchText("");
       }
-      else setIsListening(true);
+      else {
+        checkMicrophonePermission().then(granted => {
+          if (granted) setIsListening(true);
+        });
+      }
     }}>
       <DialogTrigger asChild>
         <Button variant="outline" size="icon" className="rounded-full border-primary/20 hover:border-primary/50 hover:bg-primary/5">
@@ -112,6 +116,21 @@ const LocaithVoicePro = () => {
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
+        {permissionGranted === false ? (
+             <div className="flex flex-col items-center gap-4 p-6 text-center">
+                  <div className="h-16 w-16 rounded-full bg-red-500/10 flex items-center justify-center mb-2">
+                    <AlertTriangle className="h-8 w-8 text-red-500" />
+                  </div>
+                  <h4 className="text-lg font-bold">Cần quyền truy cập Micro</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Ứng dụng cần quyền truy cập micro để tìm kiếm bằng giọng nói. Vui lòng cấp quyền trong cài đặt trình duyệt.
+                  </p>
+                  <Button onClick={() => checkMicrophonePermission().then(granted => granted && setIsListening(true))} variant="secondary" className="mt-2">
+                    Thử lại
+                  </Button>
+               </div>
+          ) : (
+            <>
         <DialogHeader>
           <DialogTitle className="text-center flex flex-col items-center gap-2">
             <span className="text-primary font-bold text-xl">Locaith Voice Pro</span>
@@ -159,7 +178,7 @@ const LocaithVoicePro = () => {
           {/* Text Input Area */}
           <div className="w-full relative">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                <Keyboard className="h-4 w-4" />
+              <Keyboard className="h-4 w-4" />
             </div>
             <Input 
                 value={searchText}
@@ -179,6 +198,8 @@ const LocaithVoicePro = () => {
             </Button>
           </div>
         </div>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );

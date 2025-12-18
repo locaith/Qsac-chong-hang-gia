@@ -16,21 +16,36 @@ const CameraAI = () => {
   const [flashOn, setFlashOn] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceText, setVoiceText] = useState("");
+  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   
   // Stages: 'idle' | 'listening' | 'analyzing' | 'result'
   const [stage, setStage] = useState<'idle' | 'listening' | 'analyzing' | 'result'>('idle');
   const [analysisStep, setAnalysisStep] = useState<string>("");
   const [result, setResult] = useState<any>(null);
 
+  const checkCameraPermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach(track => track.stop());
+      setPermissionGranted(true);
+    } catch (err) {
+      console.error("Camera permission error:", err);
+      setPermissionGranted(false);
+    }
+  };
+
   // Reset state when dialog opens/closes
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (!open) {
+    if (open) {
+      checkCameraPermission();
+    } else {
       setTimeout(() => {
         setStage('idle');
         setVoiceActive(false);
         setResult(null);
         setIsScanning(true);
+        setPermissionGranted(null);
       }, 300);
     }
   };
