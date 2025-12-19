@@ -52,6 +52,7 @@ interface Article {
   featuredImage?: string;
   tags?: string[];
   publishDate?: string;
+  slug?: string;
 }
 
 interface ArticleFormData {
@@ -64,6 +65,7 @@ interface ArticleFormData {
   tags: string;
   status: string;
   publishDate: string;
+  slug: string;
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
@@ -116,6 +118,7 @@ const Admin = () => {
     tags: "",
     status: "draft",
     publishDate: new Date().toISOString().split('T')[0],
+    slug: "",
     seoTitle: "",
     seoDescription: "",
     seoKeywords: ""
@@ -160,7 +163,8 @@ const Admin = () => {
           content: item.content,
           featuredImage: item.image_url,
           tags: item.tags || [],
-          publishDate: item.created_at.split('T')[0]
+          publishDate: item.created_at.split('T')[0],
+          slug: item.slug
         }));
         setArticles(formattedArticles);
       }
@@ -420,7 +424,7 @@ const Admin = () => {
       tags: articleForm.tags.split(",").map(tag => tag.trim()).filter(tag => tag),
       status: articleForm.status === "Đã xuất bản" || articleForm.status === "published" ? "published" : "draft",
       author_id: user?.id,
-      slug: articleForm.title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '')
+      slug: articleForm.slug || articleForm.title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '')
     };
 
     try {
@@ -455,6 +459,7 @@ const Admin = () => {
           tags: "",
           status: "draft",
           publishDate: new Date().toISOString().split('T')[0],
+          slug: "",
           seoTitle: "",
           seoDescription: "",
           seoKeywords: ""
@@ -492,6 +497,7 @@ const Admin = () => {
           tags: article.tags?.join(", ") || "",
           status: article.status === "Đã xuất bản" ? "published" : "draft",
           publishDate: article.publishDate || new Date().toISOString().split('T')[0],
+          slug: article.slug || "",
           seoTitle: "",
           seoDescription: "",
           seoKeywords: ""
@@ -706,6 +712,22 @@ const Admin = () => {
                           className="mt-2"
                           value={articleForm.title}
                           onChange={(e) => setArticleForm({ ...articleForm, title: e.target.value })}
+                        />
+                      </div>
+
+                      {/* Đường dẫn (Slug) */}
+                      <div>
+                        <Label className="text-base font-semibold">
+                          Đường dẫn bài viết (Slug)
+                        </Label>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Để trống để tự động tạo từ tiêu đề
+                        </p>
+                        <Input 
+                          placeholder="duong-dan-bai-viet" 
+                          className="mt-2"
+                          value={articleForm.slug}
+                          onChange={(e) => setArticleForm({ ...articleForm, slug: e.target.value })}
                         />
                       </div>
 

@@ -126,6 +126,25 @@ const Index = () => {
   const standardsArticles = getArticlesByCategory(['Giải mã hồ sơ', 'An ninh số'], defaultStandardsArticles);
   const technologyArticles = getArticlesByCategory(['TMĐT-AI', 'Doanh nghiệp số'], defaultTechnologyArticles);
 
+  // Get hot/featured article (most recent published)
+  const hotArticle = articles.length > 0 ? {
+    id: articles[0].id,
+    title: articles[0].title,
+    excerpt: articles[0].excerpt,
+    date: new Date(articles[0].created_at).toLocaleDateString('vi-VN'),
+    author: articles[0].profiles?.full_name || "Ban Biên Tập",
+    category: articles[0].category,
+    image: articles[0].image_url || cosmeticsImage
+  } : {
+    id: "default-hot",
+    title: "Phát động Tháng hành động vì an toàn thực phẩm năm 2025",
+    excerpt: "Ban chỉ đạo liên ngành Trung ương về an toàn thực phẩm vừa ban hành Kế hoạch triển khai Tháng hành động vì an toàn thực phẩm năm 2025.",
+    date: "20/12/2025",
+    author: "Ban Biên Tập",
+    category: "Tin nổi bật",
+    image: cosmeticsImage
+  };
+
   return <div className="min-h-screen bg-background">
       <Header />
       <BreakingNews />
@@ -135,7 +154,7 @@ const Index = () => {
         <AdBanner type="leaderboard-top" variant={1} />
       </div>
       
-      <HeroSection />
+      <HeroSection featuredArticle={hotArticle} />
       
       <CategorySection title="CẢNH BÁO & THU HỒI" color="alert" articles={alertArticles} showImages={true} />
       
